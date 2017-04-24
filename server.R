@@ -7,9 +7,9 @@
 #    http://shiny.rstudio.com/
 #
 # Import helper functions
-source("distcomps.R")
-source("get_data_to_plot.R")
-source("plot_utils.R")
+source("R/distcomps.R")
+source("R/get_data_to_plot.R")
+source("R/plot_utils.R")
 
 
 # Packages
@@ -28,20 +28,24 @@ min_row_sum <- 100
 min_row_prevalence <- 5
 B <- 100
 init_buds_from <- "principal_curve"
-path2stan <- "buds.stan"
-path2comiled <- "buds.rds"
 
 # Default data files
-countTable_default_file <- "../data/frog_processed_counts.csv"
-sampleData_default_file <- "../data/frog_sample_data.csv"
+countTable_default_file <- "data/frog_processed_counts.csv"
+sampleData_default_file <- "data/frog_sample_data.csv"
+frog_D_resfile <- "data/frog_buds_res.rds"
+frog_D0_resfile <- "data/frog_buds_res_untrans.rds"
 
-# Define server logic required to draw a histogram
 shinyServer(function(input, output) {
-  
+  # # Hide the loading message when the rest of the server function has executed
+  # hide(id = "loading-content", anim = TRUE, animType = "fade") 
+  # show("app-content")
+  shinyjs::html("text", "")
   # Count table
   X <- reactive({
-    message("Load count table...")
-    if (is.null(input$file_countTable)) {
+    message("Loading count table...")
+    shinyjs::html("text", "Loading count table...")
+    inFile <- input$file_countTable
+    if (is.null(inFile)) {
       X0 <- read.csv(countTable_default_file, row.names = 1)
       return(X0)
     }
@@ -51,8 +55,10 @@ shinyServer(function(input, output) {
   
   # External attributes of the sample
   sampleData <- reactive({
-    message("Load sample data...")
-    if (is.null(input$file_sampleData )) {
+    message("Loading sample data...")
+    shinyjs::html("text", "Loading sample data...")
+    inFile <- input$file_sampleData
+    if (is.null(inFile)) {
       sampleData0 <- read.csv(sampleData_default_file, row.names = 1)
       return(sampleData0)
     }
@@ -63,7 +69,8 @@ shinyServer(function(input, output) {
   # Covariate used for coloring points
   sample_covariate <- reactive({
     if(!(input$covariate %in% colnames(sampleData()))) {
-      message("Selected covariate is not in the sample data.")
+      warning("Selected covariate is not in the sample data.")
+      shinyjs::html("text", "ERROR: Selected co variate is not in the sample data.")
     }
     req(input$covariate %in% colnames(sampleData()))
     sample_covariate <- sampleData()[, input$covariate]
@@ -108,6 +115,7 @@ shinyServer(function(input, output) {
   # Dissimilarity matrix
   D0 <- reactive({
     message("Computing dissimilarities...")
+    shinyjs::html("text", "Computing dissimilarities...")
     typeData <- input$data_type
     if (typeData == "microbiome") {
       D <- jacc_dist(X(), min_row_sum, min_row_prevalence)
@@ -123,6 +131,7 @@ shinyServer(function(input, output) {
     D <- D0()
     if (input$transform_distances) {
       message("Transforming dissimilarities...")
+      shinyjs::html("text", "Transforming dissimilarities...")
       D <- transform_dist(D)
     }
     return(D)
@@ -132,17 +141,15 @@ shinyServer(function(input, output) {
   budsFit <- reactive({
     input$rerunButton
     req(ncol(X()) == nrow(sampleData()))
-    # if(is.null(input$file_countTable)){
-    #   res_file <- ifelse(input$transform_distances, 
-    #                      "data/frog_buds_res.rds", 
-    #                      "data/frog_buds_res_untrans.rds")
-    #   buds_fit <- readRDS(res_file)
-    #   return(buds_fit)
-    # }
-    message("Fitting BUDS...")
+    if(is.null(input$file_countTable)){
+      res_file <- ifelse(input$transform_distances,
+                         frog_D_resfile, frog_D0_resfile)
+      buds_fit <- readRDS(res_file)
+      return(buds_fit)
+    }
+    message("Fitting BUDS model...")
+    shinyjs::html("text", "Fitting BUDS model...")
     fit <- fit_buds(D(),K = K(), method = "vb",
-                    # stan_file = path2stan, 
-                    # compiled_file = path2comiled,
                     init_from = init_buds_from)
     buds_fit <- fit$fit_buds
     return(buds_fit)
@@ -173,7 +180,6 @@ shinyServer(function(input, output) {
   
   distatisData <- reactive({
     req(budsFit())
-    message("Get Distatis Input Data...")
     fitParams <- rstan::extract(budsFit())
     nDraws <- nrow(fitParams$tau)
     B <- min(B, nDraws) 
@@ -183,15 +189,17 @@ shinyServer(function(input, output) {
                                              tau_mode =  tau_df()$tau,
                                              tau.lst = boot$booData.lst, 
                                              covariate = sample_covariate())
-    
+    message("Computing input data for DiSTATIS...")
+    shinyjs::html("text", "Computing input data for DiSTATIS...")
     return(distatis_input) 
   })
   
   distatis_res <- reactive({
-    message("Run Distatis...")
     res <- run_distatis(bootD = distatisData()$bootD, dims =2,
                         booData.lst = distatisData()$booData.lst, 
                         modeData = distatisData()$modeData)
+    message("Running DiSTATIS...")
+    shinyjs::html("text", "Running DiSTATIS...")
     return(res)
   })
   

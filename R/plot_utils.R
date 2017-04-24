@@ -170,10 +170,19 @@ plot_buds_trajectory <- function(buds_fit, Y, eigs = NULL,
       add_markers(x = DF$D1, y = DF$D2, z = DF$D3, marker = list(size = 1),
                   color = DF$color_data, mode = "markers") 
     if (!is.null(eigs)){
+      axx <- list(
+        title = paste0("PC1 [", eigs[1], "%]")
+      )
+      
+      axy <- list(
+        title = paste0("PC2 [", eigs[2], "%]")
+      )
+      
+      axz <- list(
+        title = paste0("PC2 [", eigs[3], "%]")
+      )
       plt <- plt %>% 
-        layout(xaxis = list(title = paste0("PC1 [", eigs[1], "%]")), 
-               yaxis = list(title = paste0("PC2 [", eigs[2], "%]")),
-               zaxis = list(title = paste0("PC2 [", eigs[3], "%]"))) 
+        layout(scene = list(xaxis=axx,yaxis=axy,zaxis=axz)) 
     }  
   }
   return(plt)
@@ -203,7 +212,7 @@ plot_distatis <- function(distatis_df, consensus_df, color_label = NULL) {
     geom_density2d(bins = 10, lwd = 0.5) +
     stat_density2d(aes(alpha = ..level..), fill = "#2171B5",
                    n = 20, size = 0.01, geom ="polygon", bins = 20) +
-    geom_point(data =  distatis_df %>% filter(.id == 1),
+    geom_point(data =  distatis_df %>% filter(.id == 0),
                size = 1.5, color = "grey67") +
     geom_point(data = consensus_df, size = 2.5, color = "grey17", 
                pch = 21, aes(fill = covariate)) + 
@@ -250,7 +259,7 @@ plot_point_contours <- function(distatis_df, consensus_df,
     stat_density2d(data = distatis_df %>% filter(SampleID %in% chosen_samples),
                    aes(color = covariate),
                    geom ="density2d", bins = 10) +
-    geom_point(data =  distatis_df %>% filter(.id == 1), 
+    geom_point(data =  distatis_df %>% filter(.id == 0), 
                size = 1.5, color = "grey67") +
     geom_point(data = consensus_df, size = 3, aes(color = covariate)) + 
     scale_color_viridis(direction = 1, name = color_label, 
