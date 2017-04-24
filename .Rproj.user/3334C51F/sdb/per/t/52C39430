@@ -1,0 +1,20 @@
+{
+    "collab_server" : "",
+    "contents" : "#' Principal curve locations\n#' \n#' Estimating locations of data points projected on a principal curve fitted\n#' to a PCoA 2D representation\n#'\n#' @param D A square matrix of pairwise dissimilarities\n#' @param ... Other parameters for princurve::principal.curve function.\n#' \n#' @return A numeric vector of positions along the fitted principal curve. \n#' @export\nprin_curve_loc <- function(D, ...) {\n  pcoa_res <- cmdscale(sqrt(D), k = 2, eig = TRUE)\n  X <- as.matrix(pcoa_res$points)\n  prin_curve <- princurve::principal.curve(X, plot = FALSE, ...)\n  tau <- prin_curve$lambda \n  tau <- (tau - min(tau))/(max(tau) - min(tau))\n  return(tau)  \n}",
+    "created" : 1493015112403.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "801494068",
+    "id" : "52C39430",
+    "lastKnownWriteTime" : 1492816969,
+    "last_content_update" : 1492816969,
+    "path" : "~/MEGA/BIOSTATS GROUP/Projects/visBUDS/R/princurve_coords.R",
+    "project_path" : null,
+    "properties" : {
+    },
+    "relative_order" : 5,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}

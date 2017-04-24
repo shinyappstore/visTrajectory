@@ -1,0 +1,189 @@
+---
+title: "Download and preprocess data"
+output: pdf_document
+---
+
+```{r}
+rm(list = ls())
+library(xlsx)
+```
+
+Here we show where we download and preprocess the data from published studies.
+
+# Sunagawa et al. data
+
+```{r}
+data_dir <- "../data/"
+
+# Read OTU table
+otu_url <- "http://ocean-microbiome.embl.de/data/miTAG.taxonomic.profiles.release.tsv.gz"
+file <- paste0(data_dir, basename(otu_url))
+download.file(otu_url, file)
+ocean.otutab <- read.table(gzfile(file), stringsAsFactors = FALSE, sep ="\t", header = TRUE)
+rownames(ocean.otutab) <- ocean.otutab$OTU.rep
+ocean.taxtable <- as.matrix(ocean.otutab[, 1:7])
+ocean.otutab <- data.matrix(ocean.otutab[, 8:ncol(ocean.otutab)])
+ocean.otutab <- ocean.otutab[-1, ] # Taxa is undefined 
+
+# Read sample data
+sample_url <- "http://ocean-microbiome.embl.de/data/OM.CompanionTables.xlsx"
+file <- paste0(data_dir, basename(sample_url))
+download.file(sample_url, file)
+ocean.smpldata <- read.xlsx(file, 2)  # read first sheet
+ocean.smpldata <- ocean.smpldata[!is.na(ocean.smpldata[, 1]), ]
+rownames(ocean.smpldata) <- gsub("-", ".", ocean.smpldata[, 1])
+ocean.smpldata$SampleID <- rownames(ocean.smpldata)
+ocean.smpldata$Depth <- ocean.smpldata$Sampling.depth..m.
+ocean.smpldata$Ocean <- ocean.smpldata$Ocean.and.sea.regions..IHO.General.Sea.Areas.1953...MRGID.registered.at.www.marineregions.com.
+keep_cols <- c("SampleID", "Depth", "Ocean", "Station.identifier..TARA_station..", 
+               "Date.Time..yyyy.mm.ddThh.mm.", 
+               "Latitude..degrees.North.", "Longitude..degrees.East.",
+               "Sampling.depth..m.", "Environmental.Feature")
+ocean.smpldata <- ocean.smpldata[, keep_cols]
+ocean.smpldata <- ocean.smpldata[colnames(ocean.otutab), ]
+head(ocean.smpldata)
+```
+
+
+```{r}
+# Filter Taxa
+minTaxaPrev <- 5
+minTaxaSums <- 100
+ocean.otutab <- ocean.otutab[rowSums(ocean.otutab > 0) > minTaxaPrev, ]
+ocean.otutab <- ocean.otutab[rowSums(ocean.otutab) > minTaxaSums, ]
+dim(ocean.otutab)
+```
+
+
+```{r}
+jaccDist <- dist(t(ocean.otutab), method = "binary")
+D <- as.matrix(jaccDist) 
+pcoa <- cmdscale(D, k = 2, eig = T)
+
+library(ggplot2)
+library(viridis)
+ggplot(data.frame(pcoa$points), aes(X1, X2)) +
+  geom_text(aes(color = ocean.smpldata$Depth, label = 1:nrow(pcoa$points))) +
+  scale_color_viridis(trans = "log10")
+```
+
+```{r}
+list.files(data_dir)
+```
+
+
+```{r}
+write.csv(ocean.otutab, file = paste0(data_dir, "tara_processed_counts.csv"),
+          row.names = TRUE)
+write.csv(ocean.smpldata, file = paste0(data_dir, "tara_sample_data.csv"),
+          row.names = TRUE)
+```
+
+
+
+# Kostic et al. data
+
+```{r}
+# OTU counts
+otu_url <- "https://pubs.broadinstitute.org/diabimmune/uploads/attachments/82/diabimmune_t1d_16s_otu_table.txt"
+counts <- read.table(otu_url, header = TRUE, row.names = 1, quote = "", sep = "\t",
+                     comment.char = "", skip = 1)
+taxTable <- counts[, ncol(counts)]
+counts <- counts[, -ncol(counts)]
+write.csv(counts, file = paste0(data_dir, "diabimmuneT1D_count_table.csv"),
+          row.names = TRUE)
+
+
+# Sample data
+sample_url <- "https://pubs.broadinstitute.org/diabimmune/uploads/attachments/77/diabimmune_t1d_16s_metadata.rdata"
+file <- paste0(data_dir, basename(sample_url))
+download.file(sample_url, file)
+load(paste0(data_dir, "diabimmune_t1d_16s_metadata.rdata"))
+rownames(md_16S) <- md_16S$G_id
+md_16S <- md_16S[colnames(counts), ]
+write.csv(md_16S, file = paste0(data_dir, "diabimmuneT1D_sample_data.csv"),
+          row.names = TRUE)
+```
+
+
+```{r}
+library(dplyr)
+
+# Filter samples
+sampleData <- md_16S
+sampleData <- sampleData %>%
+  filter(Country == "Finland", Case_Control == "control",
+         HLA_Risk_Class == 3)
+rownames(sampleData) <- sampleData$G_id
+countTable <- counts[, rownames(sampleData)]
+
+# Filter Taxa
+minTaxaPrev <- 5
+minTaxaSums <- 100
+countTable <- countTable[rowSums(countTable > 0) > minTaxaPrev, ]
+countTable <- countTable[rowSums(countTable) > minTaxaSums, ]
+sampleData <- sampleData[colnames(countTable), ]
+dim(countTable)
+```
+
+```{r}
+write.csv(countTable, file = paste0(data_dir, "diabimmuneT1D_count_table_subset.csv"),
+          row.names = TRUE)
+write.csv(sampleData, file = paste0(data_dir, "diabimmuneT1D_sample_data_subset.csv"),
+          row.names = TRUE)
+```
+
+
+
+```{r}
+set.seed(1)
+nSamples <- 150
+sampleData <- sampleData[sample(1:nrow(sampleData), nSamples), ]
+countTable <- counts[, rownames(sampleData)]
+
+# Filter Taxa
+minTaxaPrev <- 5
+minTaxaSums <- 100
+countTable <- countTable[rowSums(countTable > 0) > minTaxaPrev, ]
+countTable <- countTable[rowSums(countTable) > minTaxaSums, ]
+sampleData <- sampleData[colnames(countTable), ]
+dim(countTable)
+```
+
+
+```{r}
+write.csv(countTable, file = paste0(data_dir, "diabimmuneT1D_count_table_small.csv"),
+          row.names = TRUE)
+write.csv(sampleData, file = paste0(data_dir, "diabimmuneT1D_sample_data_small.csv"),
+          row.names = TRUE)
+```
+
+```{r}
+list.files(data_dir)
+```
+
+
+# Owens et al. data
+
+```{r}
+# Import data
+otu_url <- "https://github.com/Teichlab/embl-single-cell-course-2016/raw/master/frog-data/GSE65785_clutchApolyA_relative_TPM.csv"
+
+countTable <- read.csv(otu_url, row.names = 1) 
+countTable <- countTable[!grepl("ERCC", rownames(countTable)), ]
+countTable <- apply(countTable, 2, function(x) x/sum(x)*1e6)
+countTable <- countTable[rowSums(countTable) > 0, ]
+
+sampleData_url <- "https://github.com/Teichlab/embl-single-cell-course-2016/raw/master/frog-data/sample_info.csv"
+sampleData <- read.csv(sampleData_url, row.names = 1) 
+```
+
+```{r}
+data_dir <- "../data/"
+write.csv(countTable, file = paste0(data_dir, "frog_processed_counts.csv"),
+          row.names = TRUE)
+write.csv(sampleData, file = paste0(data_dir, "frog_sample_data.csv"),
+          row.names = TRUE)
+```
+
+
