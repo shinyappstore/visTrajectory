@@ -27,11 +27,13 @@ shinyUI(
                                            choices = list("microbiome" = "microbiome", 
                                                        "gene expression" = "gene"), 
                                            selected = "gene")),
-                     column(4, textInput("covariate", label = h5(strong("Covariate")), 
-                                         value = "hpf")),
+                     column(2,  uiOutput("covariate")), 
+                     #textInput("covariate", label = h5(strong("Covariate")), value = "")
+                     column(2, actionButton("updateCovariate", "Update!")), 
                      column(4, numericInput("nCenters", value = 50,
                                             label = h5(strong("Number of points to highlight:"))))
                    ), 
+                   tags$style("#updateCovariate { width:100%; margin-top: 25px;}"),
                    fluidRow(
                      column(4, fileInput(inputId = "file_countTable", 
                                label = h5(strong("Count table file input (.csv)")),
@@ -62,7 +64,8 @@ shinyUI(
       # Show a plot of the generated distribution
       mainPanel(width = 20,
                 fluidRow(
-                  column(3, offset = 1, actionButton("rerunButton", "Rerun!")),
+                  column(2, offset = 1, actionButton("loadDefault", "Load default data!")),
+                  column(2, offset = 1, actionButton("runButton", "Run code!")),
                   column(6, h4(id = "text"))
                 ),
                 fluidRow(

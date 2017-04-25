@@ -75,7 +75,7 @@ plot_buds_1D <- function(tau_df, covariate = NULL, covariate_name = "covariate",
   plt <- ggplot(tau_df, aes(x = x, y = tau, color = color)) +
     geom_errorbar(aes(ymin = tau_lower, ymax = tau_upper), 
                   lwd = 0.7) +
-    geom_point(aes(fill = color), color = "grey77", pch = 21, size = 1.5) +
+    geom_point(aes(fill = color), color = "grey77", pch = 21, size = 2) +
     scale_color_viridis(name = color_label, discrete = (!is.numeric(color))) +
     scale_fill_viridis(name = color_label, discrete = (!is.numeric(color))) +
     xlab(name_x_axis) + ylab("tau") 
@@ -83,7 +83,7 @@ plot_buds_1D <- function(tau_df, covariate = NULL, covariate_name = "covariate",
   if(!is.null(idxBigger)) {
     plt <- plt + 
       geom_point(data = tau_df[idxBigger, ], aes(fill = color), 
-                 color = "grey77", pch = 21, size = 3)
+                 color = "grey77", pch = 21, size = 4)
   }
   return(plt)
 }
@@ -117,13 +117,9 @@ plot_buds_trajectory <- function(buds_fit, Y, eigs = NULL,
                                  path_col = "#2171B5", nPaths = 50, 
                                  nCenters = 50){
   nCenters <- min(nCenters, nrow(Y))
-  color_data <- "black"
-  if (!is.null(sample_data)){
-    if (!(covariate_name %in% colnames(sample_data))) {
-      stop("covariate_name is not a column in sample_data supplied.")
-    } else {
-      color_data <- sample_data[, covariate_name]
-    }
+  color_data <- 1
+  if (!is.null(sample_data) & (covariate_name %in% colnames(sample_data))) {
+    color_data <- sample_data[, covariate_name]
   }
   # Extract tau parameter
   fitParams <- rstan::extract(buds_fit)
@@ -153,7 +149,7 @@ plot_buds_trajectory <- function(buds_fit, Y, eigs = NULL,
       geom_path(data = modeDF, color = "grey17", lwd = 1.2) +
       geom_point(data = DF, color = "grey77", pch = 21, size = 2,
                  aes(fill = color_data)) +
-      geom_point(data = modeDF, color = "grey77", pch = 21, size = 5,
+      geom_point(data = modeDF, color = "grey77", pch = 21, size = 4,
                  aes(fill = color_data)) +
       scale_fill_viridis(name = covariate_name, 
                          discrete = !(is.numeric(color_data)))
@@ -205,18 +201,21 @@ plot_buds_trajectory <- function(buds_fit, Y, eigs = NULL,
 #' @return A ggplot2 object.
 #' @export
 plot_distatis <- function(distatis_df, consensus_df, color_label = NULL) {
-  if (!("covariate" %in% colnames(consensus_df))) {
-    covariate <- NA
+  if (is.na(color_label) | !(color_label %in% colnames(consensus_df))) {
+    covariate <- 1
+  } else {
+    covariate <- consensus_df[, color_label]
   }
   plt <- ggplot(distatis_df, aes(Factor.1, Factor.2)) +
     geom_density2d(bins = 10, lwd = 0.5) +
     stat_density2d(aes(alpha = ..level..), fill = "#2171B5",
                    n = 20, size = 0.01, geom ="polygon", bins = 20) +
     geom_point(data =  distatis_df %>% filter(.id == 0),
-               size = 1.5, color = "grey67") +
-    geom_point(data = consensus_df, size = 2.5, color = "grey17", 
+               size = 3, color = "grey67") +
+    geom_point(data = consensus_df, size = 4, color = "grey17", 
                pch = 21, aes(fill = covariate)) + 
-    scale_fill_viridis(direction = 1, name = color_label) +
+    scale_fill_viridis(direction = 1, name = color_label,
+                       discrete = !is.numeric(covariate)) +
     scale_alpha(range = c(0, 0.9)) +  
     xlim(1.1*min(distatis_df$Factor.1), 1.1*max(distatis_df$Factor.1)) +
     ylim(1.1*min(distatis_df$Factor.2), 1.1*max(distatis_df$Factor.2))   
@@ -246,9 +245,17 @@ plot_point_contours <- function(distatis_df, consensus_df,
     stop("consensus_df must have a column rank_tau indicating the ordering of
          the rows.")
   }
+  if (!(color_label %in% colnames(consensus_df))) {
+    consensus_df$covariate <- 1
+  } else {
+    consensus_df$covariate <- consensus_df[, color_label]
+  }
   
-  if(!("covariate" %in% colnames(distatis_df))) distatis_df$covariate <- NA
-  if(!("covariate" %in% colnames(consensus_df))) consensus_df$covariate <- NA
+  if (!(color_label %in% colnames(distatis_df))) {
+    distatis_df$covariate <- 1
+  } else {
+    distatis_df$covariate <- distatis_df[, color_label]
+  }
   
   n <- nrow(consensus_df)
   if(is.null(idx_list)) {
@@ -260,8 +267,8 @@ plot_point_contours <- function(distatis_df, consensus_df,
                    aes(color = covariate),
                    geom ="density2d", bins = 10) +
     geom_point(data =  distatis_df %>% filter(.id == 0), 
-               size = 1.5, color = "grey67") +
-    geom_point(data = consensus_df, size = 3, aes(color = covariate)) + 
+               size = 3, color = "grey67") +
+    geom_point(data = consensus_df, size = 4, aes(color = covariate)) + 
     scale_color_viridis(direction = 1, name = color_label, 
                         discrete = !is.numeric(distatis_df$covariate)) +
     xlim(1.1*min(distatis_df$Factor.1), 1.1*max(distatis_df$Factor.1)) +

@@ -161,8 +161,7 @@ get_D_copies <- function(D, buds_fit, B) {
 #' @param tau_mode [Optional] A mode estimate of tau.
 #' @param tau.lst  [Optional] A list of tau posterior draws 
 #' correspodning to each element of D.lst.
-#' @param covariate  [Optional] A vector with a sample
-#' covariate of interest.
+#' @param sample_data  [Optional] A data frame with sample data
 #' 
 #' @return A list with a 3D dissimilarity array, bootD,
 #' and a list of data frames booData for each
@@ -171,12 +170,15 @@ get_D_copies <- function(D, buds_fit, B) {
 get_input_for_distatis <- function(D, D.lst, 
                                    tau_mode = NA,
                                    tau.lst = NULL, 
-                                   covariate = NA) {
+                                   sample_data = NA) {
+  if(nrow(D) != ncol(D)) {
+    stop("D must be a square matrix.")
+  }
   if(!is.null(tau.lst) & (length(D.lst) != length(tau.lst))) {
     stop("Length of tau.lst and D.lst must match.")
   }
-  if(length(covariate) != ncol(D) | length(tau_mode) != ncol(D)) {
-    stop("Length of covariate and tau_mode and ncol(D) must match.")
+  if(nrow(sample_data) != nrow(D) | length(tau_mode) != ncol(D)) {
+    stop("nrow(sample_data), length(tau_mode) and nrow(D) must match.")
   }
   B <- length(D.lst)
   n <- ncol(D)
@@ -191,11 +193,11 @@ get_input_for_distatis <- function(D, D.lst,
   data.lst <- lapply(1:B, function(i) {
    data.frame(tau = tau.lst[[i]], 
               rank_tau = rank(tau.lst[[i]], ties.method = "first"),
-              covariate = covariate) 
+              sample_data) 
   })
   mode_data <- data.frame(tau = tau_mode, 
                           rank_tau = rank(tau_mode, ties.method = "first"),
-                          covariate = covariate) 
+                          sample_data) 
   data.lst <- c(list(mode_data), data.lst)
   return(list(bootD = D.arr, booData.lst = data.lst, modeData = mode_data))
 }
