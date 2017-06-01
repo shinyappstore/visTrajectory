@@ -47,7 +47,7 @@ get_subset_tau <- function(tau, nkeep) {
 #' the mode and upper and lower highes posterior density 
 #' interval. 
 #' 
-#' @param buds_fit A stanfit object from fit_buds() output.
+#' @param budsParams A list of parameters extracted from BUDS stanfit object.
 #' @param prob [Optional] A fraction for the probability of HPD interval.
 #' Default is 0.95.
 #' 
@@ -55,9 +55,8 @@ get_subset_tau <- function(tau, nkeep) {
 #' to mode tau estimates and the lower and upper HPD.
 #' 
 #' @export
-get_tau_df <- function(buds_fit, prob = 0.95) {
-  fitParams <- rstan::extract(buds_fit)
-  tau_mcmc <- coda::mcmc(fitParams$tau)
+get_tau_df <- function(budsParams, prob = 0.95) {
+  tau_mcmc <- coda::mcmc(budsParams$tau)
   tau_mode <- MCMCglmm::posterior.mode(tau_mcmc)
   tau_intv <- HPDinterval(tau_mcmc, prob = prob)
   resdf <- data.frame(tau = tau_mode,
@@ -122,24 +121,28 @@ low_dim_vis <- function(D, method = "PCoA", dims = 2, ...){
 #' @param buds_fit A stanfit object from fit_buds() output.
 #' @param B An integer for the number of copies of D to 
 #' generate.
+#' @min_sigma A numeric parameter for minimum standard deviation
+#' for the distance.
 #' 
 #' @return A list of two list: one with posterior draws of noisy
 #' dissimilarities, booD, and one of corresponding posterior 
 #' tau estimates bootTau.
 #' 
 #' @export
-get_D_copies <- function(D, buds_fit, B) {
-  fitParams <- rstan::extract(buds_fit)
+get_D_copies <- function(D, buds_fit, B, min_sigma = 0.03) {
+  fitParams <- rstan::extract(buds_fit$fit_buds)
   n <- dim(fitParams$tau)[2]
-  if(B > dim(fitParams$tau)[1]) {
-    B <- dim(fitParams$tau)[1]
+  nDraws <- dim(fitParams$tau)[1]
+  if(B > nDraws) {
+    B <- nDraws
   }
-  D.lst <- lapply(1:B, function(i) {
-    delta.mat <- fitParams$bias[i] + fitParams$rho_sq[i] *
+  rel_sd <- sqrt(buds_fit$distDF$v/mean(buds_fit$distDF$v))
+  
+  D.lst <- lapply(sample(1:nDraws, size = B, replace = FALSE), function(i) {
+    delta.mat <- fitParams$bias[i] + fitParams$rho[i] *
       as.matrix(dist(fitParams$tau[i, ]))
     idelta <- delta.mat[lower.tri(delta.mat)]
-    sig_sq <- (1e-3 +  fitParams$meanvar[i]) * 
-      (1e-2 +  D[lower.tri(D)]^2) + 1e-3
+    sig_sq <- (pmax(fitParams$meansd[i] * rel_sd, min_sigma))^2
     alpha <- idelta^2/sig_sq
     beta <- idelta/sig_sq
     idvec <- sapply(1:length(idelta), function(k)

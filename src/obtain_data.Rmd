@@ -168,7 +168,6 @@ list.files(data_dir)
 ```{r}
 # Import data
 otu_url <- "https://github.com/Teichlab/embl-single-cell-course-2016/raw/master/frog-data/GSE65785_clutchApolyA_relative_TPM.csv"
-
 countTable <- read.csv(otu_url, row.names = 1) 
 countTable <- countTable[!grepl("ERCC", rownames(countTable)), ]
 countTable <- apply(countTable, 2, function(x) x/sum(x)*1e6)
@@ -186,4 +185,51 @@ write.csv(sampleData, file = paste0(data_dir, "frog_sample_data.csv"),
           row.names = TRUE)
 ```
 
+```{r}
+idx <- which(sampleData$hpf < 10 | sampleData$hpf > 40)  
+subsample <- sample(which(sampleData$hpf >= 10 & sampleData$hpf <= 40))
+subsample <- subsample[seq(1, length(subsample), by = 4)]
+idx <- c(idx, subsample)
 
+countTable <- countTable[, idx]
+sampleData <- sampleData[idx, ]
+
+dim(countTable)
+```
+
+```{r}
+data_dir <- "../data/"
+write.csv(countTable, file = paste0(data_dir, "frog_processed_counts_subsample.csv"),
+          row.names = TRUE)
+write.csv(sampleData, file = paste0(data_dir, "frog_sample_data_subsample.csv"),
+          row.names = TRUE)
+```
+
+# 114th U.S. Senate Roll Call data
+
+```{r}
+s114 <- pscl::readKH("http://amypond.sscnet.ucla.edu/rollcall/static/S114.ord", 
+                     desc="114th U.S. Senate")
+s114$vote.data <- read.csv("http://amypond.sscnet.ucla.edu/rollcall/static/S114desc.csv")
+```
+
+```{r}
+s114$codes
+```
+
+
+```{r}
+binVotes <- s114$votes
+binVotes[binVotes %in% s114$codes$yea] <- 1/2
+binVotes[binVotes %in% s114$codes$nay] <- -1/2
+binVotes[binVotes %in% c(s114$codes$missing, s114$codes$notInLegis)] <- 0 
+dim(binVotes)
+```
+
+```{r}
+data_dir <- "../data/"
+write.csv(t(binVotes), file = paste0(data_dir, "114_US_Senate_binVotes.csv"),
+          row.names = TRUE)
+write.csv(s114$legis.data, file = paste0(data_dir, "114_US_Senate_legisData.csv"),
+          row.names = TRUE)
+```

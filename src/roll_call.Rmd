@@ -1,0 +1,246 @@
+---
+title: "114th Roll Call Data"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+
+```{r}
+rm(list = ls())
+
+sapply(c("knitr", "buds", "coda", "dplyr", "ggplot2", "MCMCglmm", 
+         "rstan", "viridis"), require, character.only = TRUE)
+
+# Save generated figures
+opts_chunk$set(fig.path = paste0("./roll_call/"), dev='png') 
+# Functions
+source("../R/distcomps.R")
+source("../R/get_data_to_plot.R")
+source("../R/plot_utils.R")
+```
+
+
+```{r}
+# Options
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+theme_set(theme_classic())
+theme_update(text=element_text(size=20))
+
+# Parameters
+min_row_sum <- 100
+min_row_prevalence <- 5
+B <- 100
+min_sigma <- 0.05
+hparams <- list(
+  "gamma_tau"= 2.5,
+  "gamma_epsilon" = 2.5,
+  "gamma_bias" = 2.5,
+  "gamma_rho" = 2.5,
+  "min_sigma" = min_sigma
+)
+nfeatures <- 500
+K <- 10
+```
+
+
+# Roll Call
+
+
+```{r}
+# Load data files
+countTable_default_file <- "../data/114_US_Senate_binVotes.csv"
+sampleData_default_file <- "../data/114_US_Senate_legisData.csv"
+
+sampleData <- read.csv(sampleData_default_file, row.names = 1)
+covariate_name <- "party"
+sample_covariate <- sampleData[, covariate_name]
+
+X <- read.csv(countTable_default_file, row.names = 1)
+D0 <- generic_dist(X, method = "exp manhattan", log_trans = FALSE)
+D <- D0
+```
+
+```{r}
+set.seed(1)
+buds_seed <- sample.int(.Machine$integer.max, 1)
+budsFit <- buds::fit_buds(D, K = K, method = "vb", hyperparams = hparams,
+                          init_from = "principal_curve", seed = buds_seed,
+                          tol_rel_obj = 0.005)
+budsParams <- (rstan::extract(budsFit$fit_buds))
+tau_df <- get_tau_df(budsParams, prob = 0.95)
+```
+
+
+```{r}
+party_cols <- c("D" = "#1f78b4", "R" = "#e31a1c", "Indep" = "#ff7f00")
+plt <- plot_buds_1D(tau_df, covariate = NULL,
+                    color = sample_covariate, 
+                    color_label = covariate_name, 
+                    idxBigger = NULL) 
+plt + geom_errorbar(aes(ymin = tau_lower, ymax = tau_upper), lwd = 0.9, width = 2) +
+  geom_point(aes(fill = color), color = "white", pch = 21, size = 3) +
+  scale_color_manual(name = "Party", values = party_cols) +
+  scale_fill_manual(name = "Party", values = party_cols) 
+```
+
+```{r, fig.width=9, fig.height=7}
+sampleData$Legis <- rownames(sampleData)
+sampleData$Legis <- factor(sampleData$Legis,
+                          levels = sampleData$Legis[order(-tau_df$tau)])
+(ptau1 <- tau_df %>%
+    ggplot(aes(x = sampleData$Legis, y = tau, col = sampleData$party)) +
+    geom_errorbar(aes(ymin = tau_lower, ymax = tau_upper), width = 1, lwd = 0.9) +
+    geom_point(pch = 21, aes(fill = sampleData$party), color = "white", size = 3) +
+    scale_fill_manual(name = "Party", values = party_cols) +
+    scale_color_manual(name = "Party", values = party_cols) +
+    ylab("BUDS tau") + xlab("Senator") +
+    theme(text = element_text(size = 20), legend.position = c(0.9, 0.8),
+          axis.text.x = element_text(angle = 90, size = 8, face = "bold")))
+
+```
+
+
+
+
+## Bootstrap MDS ordering
+
+
+```{r}
+# Plot Ord
+plot_ord <- function(ord_res, ord_eig = NULL, size = 1,
+                     colData = NULL, colLabel = "Variable",
+                     title = "Ordination plot", prin_curve = FALSE,
+                     edgesCol = "grey57", pathCol = "#2171B5", 
+                     lwd = 1.5, ...) {
+  if (!is.null(ord_eig)) {
+    ord_eig <- 100 * ord_eig /sum(ord_eig)
+    ord_eig <- signif(ord_eig, digits = 3)
+  } 
+  X <- data.frame(ord_res)
+  colnames(X) <- paste0("X", 1:ncol(X))
+  p <- ggplot(X, aes(X1, X2)) + ggtitle(title) 
+  
+  if(prin_curve) {
+    prin_curve <- princurve::principal.curve(as.matrix(X), plot = FALSE, ...)
+    fittedLine <- data.frame(prin_curve$s[prin_curve$tag, ])
+    p <- p + geom_path(data = fittedLine, col = pathCol, lwd = lwd) +
+      geom_segment(aes(xend = prin_curve$s[, 1], yend = prin_curve$s[, 2]),
+                   size = 0.5, col = edgesCol) 
+  }
+  if (!is.null(colData)) {
+    p <- p + geom_point(aes(color = colData), size = size) +
+      scale_color_viridis(name = colLabel, discrete = !is.numeric(colData)) 
+  } else {
+    p <- p + geom_point(size = size)
+  }
+  if (!is.null(ord_eig)){
+    eig_ratio =  ord_eig[2]/ord_eig[1]
+    p <- p + xlab(paste0("PC1 [", ord_eig[1], "%]")) +
+      ylab(paste0("PC2 [", ord_eig[2], "%]")) + 
+      coord_fixed(ratio = max(0.5, eig_ratio))
+  }  
+  return(list(plot = p, fit.prin_curve = prin_curve))
+}
+
+```
+
+
+```{r}
+cmdsRes <- cmdscale(D, k = 10, eig = TRUE)
+ord_eig <- signif(cmdsRes$eig/sum(cmdsRes$eig) *100, digits = 3)
+```
+
+
+```{r, message=FALSE}
+ordRes <- plot_ord(data.frame(cmdsRes$points), ord_eig, 
+         colData = sampleData$party, prin_curve = T) 
+ordRes$plot + scale_color_manual(name = "Party", values = party_cols) 
+
+tau0 <- ordRes$fit.prin_curve$lambda 
+tau0 <- (tau0 - min(tau0))/diff(range(tau0))
+```
+
+```{r}
+set.seed(123)
+B <- 500
+nSamples <- floor(0.8*ncol(D))
+
+tau.boots <- matrix(NA, nrow = B, ncol = ncol(D))
+
+for(i in 1:B) {
+  if (i %% 50 == 0) print(paste("Iteration:", i))
+  idx <- sample(1:ncol(D), nSamples)
+  icmds <- cmdscale(D[idx, idx], k = 10, eig = TRUE)
+  prin_curve <- princurve::principal.curve(icmds$points, plot = FALSE)
+  itau <- prin_curve$lambda
+  itau <- (itau - min(itau))/diff(range(itau))
+  R1 <- cor(itau, tau0[idx], method = "spearman")
+  if (R1 < 0) itau <- 1 - itau
+  tau.boots[i, idx] <- itau 
+}
+
+```
+
+
+```{r}
+cmds_df <- data.frame(Senator = rownames(sampleData),
+                       tau = colMeans(tau.boots, na.rm = TRUE))
+sd_tau <- apply(tau.boots, 2, sd, na.rm = TRUE)
+cmds_df$tau_upper <- cmds_df$tau + sd_tau
+cmds_df$tau_lower <- cmds_df$tau - sd_tau
+
+```
+
+
+```{r fig.weight=7}
+cmds_legis <- factor(sampleData$Legis,
+                     levels = sampleData$Legis[order(-cmds_df$tau)])
+
+(ptau_cmds <- cmds_df %>%
+    ggplot(aes(x = cmds_legis, y = tau, col = sampleData$party)) +
+    geom_errorbar(aes(ymin = tau_lower, ymax = tau_upper), width = 1, lwd = 0.9) +
+    geom_point(pch = 21, aes(fill = sampleData$party), color = "white", size = 3) +
+    scale_fill_manual(name = "Party", values = party_cols) +
+    scale_color_manual(name = "Party", values = party_cols) +
+    ylab("CMDS tau") + xlab("Senator") +
+    theme(text = element_text(size = 20), legend.position = c(0.9, 0.8),
+          axis.text.x = element_text(angle = 90, size = 8, face = "bold")))
+```
+
+
+```{r, fig.width=8, fig.height=7}
+colnames(cmds_df) <- c("senator", "cmds_tau", "cmds_tau_upper", "cmds_tau_lower")
+df <- cbind(tau_df, cmds_df, party = sampleData$party)
+rownames(df) <- NULL
+(plt <- ggplot(df, aes(x = tau, y = cmds_tau, fill = party, color = party)) +
+                 geom_point(color = "white", pch = 21, size = 3) +
+                 scale_fill_manual(name = "Party", values = party_cols) +
+                 scale_color_manual(name = "Party", values = party_cols) +
+   geom_errorbar(aes(ymin = cmds_tau_lower, ymax = cmds_tau_upper), width = 0.02, lwd = 0.7) +
+   geom_errorbarh(aes(xmin = tau_lower, xmax = tau_upper), height = 0.02, lwd = 0.7) +
+   theme(text = element_text(size = 20), 
+          axis.text.x = element_text(angle = 90, size = 8, face = "bold"))
+   + coord_fixed()) 
+```
+
+
+
+```{r}
+ordered <- data.frame(buds = levels(sampleData$Legis),
+                      cmds = levels(cmds_legis))
+```
+
+
+```{r}
+kable(ordered)
+```
+
+
+
+```{r}
+sessionInfo()
+```
+
+

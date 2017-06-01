@@ -22,18 +22,28 @@ shinyUI(
     sidebarLayout(
       sidebarPanel(position = "right", width = 15,
                    fluidRow(
-                     column(4, selectInput(inputId = "data_type", 
-                                           label =  h5(strong("Sequencing data type:")), 
-                                           choices = list("microbiome" = "microbiome", 
-                                                       "gene expression" = "gene"), 
-                                           selected = "gene")),
-                     column(2,  uiOutput("covariate")), 
-                     #textInput("covariate", label = h5(strong("Covariate")), value = "")
-                     column(2, actionButton("updateCovariate", "Update!")), 
-                     column(4, numericInput("nCenters", value = 50,
-                                            label = h5(strong("Number of points to highlight:"))))
+                     column(4, selectInput(inputId = "dist_method", 
+                                           label =  h5(strong("Distance metric:")), 
+                                           choices = list("Jaccard" = "jaccard", 
+                                                       "correlation" = "correlation",
+                                                       "Manhattan" = "manhattan",
+                                                       "Euclidean" = "euclidean",
+                                                       "Exp Manhattan" = "exp manhattan",
+                                                       "Exp Euclidean" = "exp euclidean",
+                                                       "Maximum" = "maximum",
+                                                       "Canberra" = "canberra",
+                                                       "Binary" = "binary",
+                                                       "Minkowski"= "minkowski"), 
+                                           selected = "correlation")),
+                     column(4,  uiOutput("covariate")), 
+                     column(2, selectInput(inputId = "init", 
+                                           label =  h5(strong("Initialize from:")), 
+                                           choices = list("Principal Curve" = "principal_curve", 
+                                                          "Random" = "random"), 
+                                           selected = "prin_curve")),
+                     column(2, numericInput("K", value = NA,
+                                            label = h5(strong("k-nearest neighbors:"))))
                    ), 
-                   tags$style("#updateCovariate { width:100%; margin-top: 25px;}"),
                    fluidRow(
                      column(4, fileInput(inputId = "file_countTable", 
                                label = h5(strong("Count table file input (.csv)")),
@@ -42,19 +52,23 @@ shinyUI(
                                  label =  h5(strong("Visualization method:")), 
                                  choices = list("PCoA" = "PCoA", "tSNE" = "tSNE"), 
                                  selected = "PCoA")),
-                     column(2, numericInput("K", value = NULL,
-                                            label = h5(strong("k-nearest neighbors:")))),
+                     column(2, numericInput("nCenters", value = 50,
+                                            label = h5(strong("No. highlighted of points:")))),
                      column(2, numericInput("nPaths", value = 50,
-                                            label = h5(strong("Number of paths to plot:"))))
+                                            label = h5(strong("No. of plotted paths:"))))
                    ), 
                    fluidRow(
                      column(4, fileInput(inputId = "file_sampleData", 
                                          label = h5(strong("Sample data file input (.csv)")),
                                          accept = ".csv")),
-                     column(4, selectInput(inputId = "transform_distances", 
-                                           label =  h5(strong("Apply dissimilarity transformation:")), 
+                     column(2, selectInput(inputId = "log_transform_data", 
+                                           label =  h5(strong("Log transform data:")), 
                                            choices = list("yes" = TRUE, "no" = FALSE), 
                                            selected = TRUE)),
+                     column(2, selectInput(inputId = "transform_distances", 
+                                           label =  h5(strong("Transform dissimilarities:")), 
+                                           choices = list("yes" = TRUE, "no" = FALSE), 
+                                           selected = FALSE)),
                      column(2, textInput("sample_idx", label = h5(strong("Chosen samples")), 
                                          value = "15, 30, 50")),
                      column(2, textInput("feat_idx", label = h5(strong("Chosen features")), 
@@ -65,8 +79,9 @@ shinyUI(
       mainPanel(width = 20,
                 fluidRow(
                   column(2, offset = 1, actionButton("loadDefault", "Load default data!")),
-                  column(2, offset = 1, actionButton("runButton", "Run code!")),
-                  column(6, h4(id = "text"))
+                  column(2, actionButton("runButton", "Run BUDS!")),
+                  column(2, actionButton("updateButton", "Update colors!")),
+                  column(5, h4(id = "text"))
                 ),
                 fluidRow(
                   column(4, plotOutput("plot_rank_tau")),

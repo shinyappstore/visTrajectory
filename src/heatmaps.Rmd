@@ -1,0 +1,257 @@
+---
+title: "Heatmaps"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+```{r}
+rm(list = ls())
+
+sapply(c("knitr", "buds", "coda", "dplyr", "ggplot2", "MCMCglmm", 
+         "rstan", "viridis"), require, character.only = TRUE)
+
+# Save generated figures
+opts_chunk$set(fig.path = paste0("./heatmaps/"), dev='png') 
+# Functions
+source("../R/distcomps.R")
+source("../R/get_data_to_plot.R")
+source("../R/plot_utils.R")
+```
+
+
+```{r}
+# Options
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+theme_set(theme_classic())
+theme_update(text=element_text(size=15),
+             legend.title.align = 0.5,
+             legend.title = element_text(size=12))
+
+# Parameters
+min_row_sum <- 100
+min_row_prevalence <- 5
+B <- 100
+min_sigma <- 0.05
+hparams <- list(
+  "gamma_tau"= 2.5,
+  "gamma_epsilon" = 2.5,
+  "gamma_bias" = 2.5,
+  "gamma_rho" = 2.5,
+  "min_sigma" = min_sigma
+)
+nfeatures <- 500
+K <- 10
+```
+
+
+Generating heatmaps using alternative methods for comparison with BUDS ordering.
+
+# Frog data 
+
+```{r}
+# Load data files
+sampleData_default_file <- "../data/frog_sample_data.csv"
+countTable_default_file <- "../data/frog_processed_counts.csv"
+
+sampleData <- read.csv(sampleData_default_file, row.names = 1)
+covariate_name <- "hpf"
+sample_covariate <- sampleData[, covariate_name]
+
+X <- read.csv(countTable_default_file, row.names = 1)
+
+D0 <- cor_dist(X, log_trans = FALSE)
+D <- D0
+```
+
+```{r}
+set.seed(1)
+buds_seed <- sample.int(.Machine$integer.max, 1)
+budsFit <- buds::fit_buds(D, K = K, method = "vb", hyperparams = hparams,
+                          init_from = "random", seed = buds_seed,
+                          tol_rel_obj = 0.005)
+budsParams <- (rstan::extract(budsFit$fit_buds))
+tau_df <- get_tau_df(budsParams, prob = 0.95)
+```
+
+```{r frog_buds, message=FALSE}
+set.seed(1)
+idx <- sample(1:nrow(X), nfeatures)
+(plt <- plot_ordered_matrix(X, tau_df$tau, 
+                           log_trans = TRUE,
+                           keep_fatures = idx) +
+    coord_fixed(0.40))
+```
+
+```{r frog_neatmap, message=FALSE}
+Xsmall <- as.matrix(X[idx, ])
+NeatMap::heatmap1(Xsmall + 1) + coord_fixed(0.35) +
+  scale_fill_gradient2(low = "green", high = "red", mid = "black", 
+                       midpoint = mean(log10(Xsmall + 1), na.rm = TRUE), 
+                       trans = "log10")
+```
+
+```{r frog_neatmap2, message=FALSE}
+Xsmall <- X[idx, ]
+NeatMap::heatmap1(Xsmall+1) + coord_fixed(0.35) +
+  scale_fill_viridis(trans = "log10")
+```
+
+# TARA Oceans
+
+```{r}
+# Load data files
+sampleData_default_file <- "../data/tara_sample_data.csv"
+countTable_default_file <- "../data/tara_processed_counts.csv"
+
+sampleData <- read.csv(sampleData_default_file, row.names = 1)
+covariate_name <- "Log10_Depth"
+sample_covariate <- sampleData[, covariate_name]
+
+X <- read.csv(countTable_default_file, row.names = 1)
+
+D0 <- generic_dist(X, method = "jaccard",
+                   min_row_sum = min_row_sum,
+                   min_row_prevalence = min_row_prevalence) 
+D <- D0
+```
+
+```{r}
+set.seed(1)
+buds_seed <- sample.int(.Machine$integer.max, 1)
+budsFit <- buds::fit_buds(D, K = K, method = "vb", hyperparams = hparams,
+                          init_from = "random", seed = buds_seed,
+                          tol_rel_obj = 0.005)
+budsParams <- (rstan::extract(budsFit$fit_buds))
+tau_df <- get_tau_df(budsParams, prob = 0.95)
+```
+
+
+```{r tara_buds, message=FALSE}
+set.seed(1)
+idx <- sample(1:nrow(X), nfeatures)
+(plt <- plot_ordered_matrix(X, tau_df$tau, 
+                           log_trans = TRUE,
+                           keep_fatures = idx) +
+    coord_fixed(0.6))
+```
+
+```{r tara_neatmap}
+Xsmall <- as.matrix(X[idx, ])
+NeatMap::heatmap1(Xsmall + 1) + coord_fixed(0.65) +
+  scale_fill_gradient2(low = "green", high = "red", mid = "black", 
+                       midpoint = mean(log10(Xsmall + 1), na.rm = TRUE), 
+                       trans = "log10")
+```
+
+```{r tara_neatmap2, message=FALSE}
+Xsmall <- X[idx, ]
+NeatMap::heatmap1(Xsmall+1) + coord_fixed(0.65) +
+  scale_fill_viridis(trans = "log10")
+```
+
+# DIABIMMUNE
+
+```{r}
+# Load data files
+countTable_default_file <- "../data/diabimmuneT1D_count_table_subset.csv"
+sampleData_default_file <- "../data/diabimmuneT1D_sample_data_subset.csv"
+
+sampleData <- read.csv(sampleData_default_file, row.names = 1)
+covariate_name <- "Age_at_Collection"
+sample_covariate <- sampleData[, covariate_name]
+
+X <- read.csv(countTable_default_file, row.names = 1)
+D0 <- generic_dist(X, method = "jaccard",
+                   min_row_sum = min_row_sum,
+                   min_row_prevalence = min_row_prevalence) 
+D <- transform_dist(D0, threshold = FALSE)
+```
+
+```{r}
+set.seed(1)
+buds_seed <- sample.int(.Machine$integer.max, 1)
+budsFit <- buds::fit_buds(D, K = K, method = "vb", hyperparams = hparams,
+                          init_from = "principal_curve", seed = buds_seed,
+                          tol_rel_obj = 0.005)
+budsParams <- (rstan::extract(budsFit$fit_buds))
+tau_df <- get_tau_df(budsParams, prob = 0.95)
+```
+
+
+```{r, diab_buds, message=FALSE}
+set.seed(1)
+idx <- sample(1:nrow(X), nfeatures)
+(plt <- plot_ordered_matrix(X, tau_df$tau, 
+                           log_trans = TRUE,
+                           keep_fatures = idx) +
+    coord_fixed(1.5))
+```
+
+```{r diab_neatmap}
+Xsmall <- as.matrix(X[idx, ])
+NeatMap::heatmap1(Xsmall + 1) + coord_fixed(1.3) +
+  scale_fill_gradient2(low = "green", high = "red", mid = "black", 
+                       midpoint = mean(log10(Xsmall + 1), na.rm = TRUE), 
+                       trans = "log10")
+```
+
+```{r diab_neatmap2, message=FALSE}
+Xsmall <- X[idx, ]
+NeatMap::heatmap1(Xsmall+1) + coord_fixed(1.3) +
+  scale_fill_viridis(trans = "log10")
+```
+
+
+# Roll Call
+
+
+```{r}
+# Load data files
+countTable_default_file <- "../data/114_US_Senate_binVotes.csv"
+sampleData_default_file <- "../data/114_US_Senate_legisData.csv"
+
+sampleData <- read.csv(sampleData_default_file, row.names = 1)
+covariate_name <- "party"
+sample_covariate <- sampleData[, covariate_name]
+
+X <- read.csv(countTable_default_file, row.names = 1)
+D0 <- generic_dist(X, method = "exp manhattan", log_trans = FALSE)
+D <- D0
+```
+
+```{r}
+set.seed(1)
+buds_seed <- sample.int(.Machine$integer.max, 1)
+budsFit <- buds::fit_buds(D, K = K, method = "vb", hyperparams = hparams,
+                          init_from = "random", seed = buds_seed,
+                          tol_rel_obj = 0.005)
+budsParams <- (rstan::extract(budsFit$fit_buds))
+tau_df <- get_tau_df(budsParams, prob = 0.95)
+```
+
+
+```{r, rc_buds, message=FALSE}
+set.seed(1)
+idx <- sample(1:nrow(X), nfeatures)
+(plt <- plot_ordered_matrix(X, tau_df$tau, 
+                           log_trans = TRUE,
+                           keep_fatures = idx) +
+    coord_fixed(0.5))
+```
+
+```{r rc_neatmap}
+Xsmall <- as.matrix(X[idx, ])
+NeatMap::heatmap1(Xsmall + 1) + coord_fixed(0.45) +
+  scale_fill_gradient2(low = "green", high = "red", mid = "black", 
+                       midpoint = mean(log10(Xsmall + 1), na.rm = TRUE), 
+                       trans = "log10")
+```
+
+```{r rc_neatmap2, message=FALSE}
+Xsmall <- X[idx, ]
+NeatMap::heatmap1(Xsmall+1) + coord_fixed(0.45) +
+  scale_fill_viridis(trans = "log10")
+
+```

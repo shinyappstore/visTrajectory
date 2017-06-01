@@ -83,7 +83,7 @@ plot_buds_1D <- function(tau_df, covariate = NULL, covariate_name = "covariate",
   if(!is.null(idxBigger)) {
     plt <- plt + 
       geom_point(data = tau_df[idxBigger, ], aes(fill = color), 
-                 color = "grey77", pch = 21, size = 4)
+                 color = "grey77", pch = 21, size = 3)
   }
   return(plt)
 }
@@ -95,7 +95,7 @@ plot_buds_1D <- function(tau_df, covariate = NULL, covariate_name = "covariate",
 #' of t-SNE, together with posterior data trajectories 
 #' (paths) computed with BUDS.
 #'
-#' @param buds_fit A stanfit object with BUDS results.
+#' @param budsParams A list of parameters extracted from BUDS stanfit object.
 #' @param Y A data frame with 2D representation of the data
 #' @param eigs[Optional] A vector of eigenvalues corresponding 
 #' to columns of Y.
@@ -111,7 +111,7 @@ plot_buds_1D <- function(tau_df, covariate = NULL, covariate_name = "covariate",
 #' Default is 50.
 #' @return A ggplot2 object.
 #' @export
-plot_buds_trajectory <- function(buds_fit, Y, eigs = NULL, 
+plot_buds_trajectory <- function(budsParams, Y, eigs = NULL, 
                                  sample_data = NULL, 
                                  covariate_name = "covariate", 
                                  path_col = "#2171B5", nPaths = 50, 
@@ -122,11 +122,10 @@ plot_buds_trajectory <- function(buds_fit, Y, eigs = NULL,
     color_data <- sample_data[, covariate_name]
   }
   # Extract tau parameter
-  fitParams <- rstan::extract(buds_fit)
-  tau_mcmc <- coda::mcmc(fitParams$tau)
+  tau_mcmc <- coda::mcmc(budsParams$tau)
   tau_mode <- MCMCglmm::posterior.mode(tau_mcmc)
   names(tau_mode) <- rownames(D)
-  tau_samples <- fitParams$tau
+  tau_samples <- budsParams$tau
   tau_samples <- tau_samples[sample(1:nrow(tau_samples), nPaths), ]
   # Data to plot
   DF <- Y
@@ -149,7 +148,7 @@ plot_buds_trajectory <- function(buds_fit, Y, eigs = NULL,
       geom_path(data = modeDF, color = "grey17", lwd = 1.2) +
       geom_point(data = DF, color = "grey77", pch = 21, size = 2,
                  aes(fill = color_data)) +
-      geom_point(data = modeDF, color = "grey77", pch = 21, size = 4,
+      geom_point(data = modeDF, color = "grey77", pch = 21, size = 3,
                  aes(fill = color_data)) +
       scale_fill_viridis(name = covariate_name, 
                          discrete = !(is.numeric(color_data)))
@@ -175,7 +174,7 @@ plot_buds_trajectory <- function(buds_fit, Y, eigs = NULL,
       )
       
       axz <- list(
-        title = paste0("PC2 [", eigs[3], "%]")
+        title = paste0("PC3 [", eigs[3], "%]")
       )
       plt <- plt %>% 
         layout(scene = list(xaxis=axx,yaxis=axy,zaxis=axz)) 
@@ -202,7 +201,7 @@ plot_buds_trajectory <- function(buds_fit, Y, eigs = NULL,
 #' @export
 plot_distatis <- function(distatis_df, consensus_df, color_label = NULL) {
   if (is.na(color_label) | !(color_label %in% colnames(consensus_df))) {
-    covariate <- 1
+    covariate <- rep(1, nrow(consensus_df))
   } else {
     covariate <- consensus_df[, color_label]
   }
@@ -211,8 +210,8 @@ plot_distatis <- function(distatis_df, consensus_df, color_label = NULL) {
     stat_density2d(aes(alpha = ..level..), fill = "#2171B5",
                    n = 20, size = 0.01, geom ="polygon", bins = 20) +
     geom_point(data =  distatis_df %>% filter(.id == 0),
-               size = 3, color = "grey67") +
-    geom_point(data = consensus_df, size = 4, color = "grey17", 
+               size = 2, color = "grey67") +
+    geom_point(data = consensus_df, size = 3, color = "grey17", 
                pch = 21, aes(fill = covariate)) + 
     scale_fill_viridis(direction = 1, name = color_label,
                        discrete = !is.numeric(covariate)) +
@@ -256,7 +255,6 @@ plot_point_contours <- function(distatis_df, consensus_df,
   } else {
     distatis_df$covariate <- distatis_df[, color_label]
   }
-  
   n <- nrow(consensus_df)
   if(is.null(idx_list)) {
     idx_list <- floor(seq(5, n-5, length.out = 3))
@@ -267,8 +265,8 @@ plot_point_contours <- function(distatis_df, consensus_df,
                    aes(color = covariate),
                    geom ="density2d", bins = 10) +
     geom_point(data =  distatis_df %>% filter(.id == 0), 
-               size = 3, color = "grey67") +
-    geom_point(data = consensus_df, size = 4, aes(color = covariate)) + 
+               size = 2, color = "grey67") +
+    geom_point(data = consensus_df, size = 3, aes(color = covariate)) + 
     scale_color_viridis(direction = 1, name = color_label, 
                         discrete = !is.numeric(distatis_df$covariate)) +
     xlim(1.1*min(distatis_df$Factor.1), 1.1*max(distatis_df$Factor.1)) +
@@ -328,10 +326,13 @@ plot_features_curves <- function(X, tau, feat_idx = NA,
 #' along tau.
 #' 
 #'
-#' @param X A data frame of matrix.
+#' @param X A data frame of matrix where rows are features and columns 
+#' are samples.
 #' @param tau A vector with latent 1D coordinates for data points.
 #' @param log_trans [Optional] A boolean for whether to log 
 #' transform the data before plotting. Default is FALSE. 
+#' @param norm_samples A boolean whether the columns (samples) should be 
+#' normalize to even total sum.
 #' @param keep_features [Optional] A list of features (rows) that must be
 #' included in the heatmap.
 #' @param nfeatures The number of features to keep. Default is 500.
@@ -342,17 +343,15 @@ plot_features_curves <- function(X, tau, feat_idx = NA,
 #' @param minsum A for the minimum sum for a feature in a data matrix.
 #' @return A ggplot2 object.
 #' @export
-plot_ordered_matrix <- function(X, tau, log_trans = FALSE,
+plot_ordered_matrix <- function(X, tau, log_trans = FALSE, norm_samples = FALSE,
                                 keep_fatures = NULL, nfeatures = 500,
                                 byMean = TRUE, window = 5, minSum = 0){
   X <- X[rowSums(X) > minSum, ]
-  nfeatures <- min(nfeatures, 2*ncol(X))
+  nfeatures <- min(nfeatures, nrow(X))
   if(is.null(keep_fatures)) keep_fatures <- sample(1:nrow(X), nfeatures)
   nSamples <- ncol(X)
   X2plot <- X[keep_fatures, order(tau)]
-  
   normX2plot <- apply(X2plot, 2, function(x) x/sum(x))
-  
   if(byMean) {
     feat_loc <- normX2plot %*% tau
   } else {
@@ -362,9 +361,9 @@ plot_ordered_matrix <- function(X, tau, log_trans = FALSE,
       which.max(y)
     })
   }
+  if (norm_samples) X2plot <- normX2plot
   X2plot <- X2plot[order(feat_loc), ] 
   rownames(X2plot) <- colnames(X2plot) <- NULL
-  
   if(log_trans) X2plot <- as.matrix(X2plot) + 1 
   plt <- plot_matrix(X2plot) + coord_fixed() +
     xlab("Samples") + ylab("Features") +

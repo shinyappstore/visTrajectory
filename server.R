@@ -7,10 +7,9 @@
 #    http://shiny.rstudio.com/
 #
 # Import helper functions
-source("R/distcomps.R")
-source("R/get_data_to_plot.R")
-source("R/plot_utils.R")
-
+source("./R/distcomps.R")
+source("./R/get_data_to_plot.R")
+source("./R/plot_utils.R")
 
 # Packages
 sapply(c("buds", "coda", "DistatisR", "dplyr", "ggplot2", "MCMCglmm", 
@@ -21,25 +20,37 @@ sapply(c("buds", "coda", "DistatisR", "dplyr", "ggplot2", "MCMCglmm",
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 options(shiny.maxRequestSize=30*1024^2) 
-theme_set(theme_bw())
+theme_set(theme_classic())
+theme_update(text=element_text(size=20))
 
 # Parameters
 min_row_sum <- 100
 min_row_prevalence <- 5
 B <- 100
-init_buds_from <- "principal_curve"
+min_sigma <- 0.05
+hparams <- list(
+  "gamma_tau"= 2.5,
+  "gamma_epsilon" = 2.5,
+  "gamma_bias" = 2.5,
+  "gamma_rho" = 2.5,
+  "min_sigma" = min_sigma
+)
 
 # Default data files
 countTable_default_file <- "data/frog_processed_counts.csv"
 sampleData_default_file <- "data/frog_sample_data.csv"
-frog_D_resfile <- "data/frog_buds_res.rds"
-frog_D0_resfile <- "data/frog_buds_res_untrans.rds"
+
 
 shinyServer(function(input, output) {
   shinyjs::html("text", "")
   
+  # Drop-down selection box for which data set
+  output$covariate <- renderUI({
+    selectInput("covariate", "Sample covariate:", colnames(sampleData()))
+  })
+  
   # Count table
-  X <- reactive({
+  X <-  eventReactive(c(input$loadDefault, input$file_sampleData), {
     if (!is.null(input$file_countTable)) {
       message("Loading count table...")
       shinyjs::html("text", "Loading count table...")
@@ -56,7 +67,7 @@ shinyServer(function(input, output) {
   })
   
   # External attributes of the sample
-  sampleData <- reactive({
+  sampleData <- eventReactive(c(input$loadDefault, input$file_sampleData), {
     if (!is.null(input$file_sampleData)) {
       message("Loading sample data...")
       shinyjs::html("text", "Loading sample data...")
@@ -72,15 +83,10 @@ shinyServer(function(input, output) {
     }
   })
   
-  # Drop-down selection box for which data set
-  output$covariate <- renderUI({
-    selectInput("covariate", "Sample covariate:", colnames(sampleData()))
-  })
-  
-  covariate_name <- eventReactive(input$updateCovariate, {
+  covariate_name <- reactive({
     if(input$covariate %in% colnames(sampleData())) {
       return(input$covariate)
-    } else if (input$loadDefault & input$covariate == "") {
+    } else if (input$loadDefault) {
       return("hpf")
     } else {
       return(NA)
@@ -88,14 +94,17 @@ shinyServer(function(input, output) {
   })
   
   # Covariate used for coloring points
-  sample_covariate <- eventReactive(covariate_name(), {
+  sample_covariate <- reactive({
+    if((covariate_name() %in% colnames(sampleData()))) {
+      message(paste0("Data covariate: ", covariate_name(), " selected..."))
+      sample_covariate <- sampleData()[, covariate_name()]
+      return(sample_covariate)
+    }
     if(!(covariate_name() %in% colnames(sampleData()))) {
       warning("Selected covariate is not in the sample data.")
       shinyjs::html("text", "ERROR: Selected covariate is not in the sample data.")
       return(rep(1, ncol(X())))
     }
-    sample_covariate <- sampleData()[, covariate_name()]
-    return(sample_covariate)
   })
   
   # Chosen features indexes
@@ -125,8 +134,8 @@ shinyServer(function(input, output) {
   
   # Constant (K) for selecting number of kNN
   K <- reactive({
-    if(is.null(input$K)) {
-      K <- floor(ncol(X())/10)
+    if(is.na(input$K)) {
+      K <- min(c(floor(ncol(X())/10), 10))
     } else {
       K <- input$K
     }
@@ -135,51 +144,55 @@ shinyServer(function(input, output) {
   
   # Dissimilarity matrix
   D0 <- eventReactive(c(input$runButton, input$loadDefault), {
-    req(input$runButton | input$loadDefault)
-    message("Computing dissimilarities...")
-    shinyjs::html("text", "Computing dissimilarities...")
-    typeData <- input$data_type
-    if (typeData == "microbiome") {
-      D <- jacc_dist(X(), min_row_sum, min_row_prevalence)
+    req(X())
+    dist_method <- input$dist_method
+    message(paste0("Computing ", dist_method, " dissimilarities..."))
+    shinyjs::html("text", paste0("Computing ", dist_method, " dissimilarities..."))
+    logTrans <-  input$log_transform_data
+    if (dist_method == "correlation"){
+      D <- cor_dist(X(), log_trans = logTrans)
     } else {
-      D <- cor_dist(X(), log_trans = TRUE, scale = TRUE, base = 1e6)
+      D <- generic_dist(X(), method = dist_method, log_trans = logTrans,
+                        min_row_sum = min_row_sum,
+                        min_row_prevalence = min_row_prevalence)
     }
     return(D)
   })
   
-  
   # Transformed dissimilarity matrix
   D <- reactive({
     req(D0())
+    D <- D0()
     if (input$transform_distances) {
       message("Transforming dissimilarities...")
       shinyjs::html("text", "Transforming dissimilarities...")
-      D <- transform_dist(D0())
+      D <- transform_dist(D0(), threshold = FALSE)
     }
     return(D)
   }) 
   
   # Fit 1D latent coordinates, tau, with BUDS
   budsFit <- eventReactive(c(input$runButton, input$loadDefault), {
-    if(input$loadDefault & is.null(isolate(input$file_countTable))){
-      res_file <- ifelse(input$transform_distances,
-                         frog_D_resfile, frog_D0_resfile)
-      buds_fit <- readRDS(res_file)
-      return(buds_fit)
-    }
     req(D())
-    message("Fitting BUDS model...")
-    shinyjs::html("text", "Fitting BUDS model...")
+    message(paste0("Fitting BUDS model with ", input$init, " initialization ..."))
+    shinyjs::html("text", paste0("Fitting BUDS model with ", input$init, " initialization ..."))
+    buds_seed <- sample.int(.Machine$integer.max, 1)
     fit <- buds::fit_buds(D(), K = K(), method = "vb",
-                          init_from = init_buds_from)
-    buds_fit <- fit$fit_buds
-    return(buds_fit)
+                          hyperparams = hparams,
+                          init_from = input$init,
+                          seed = buds_seed, tol_rel_obj = 0.005)
+    print(paste0("BUDS seed: ", fit$seed))
+    return(fit)
   })
   
+  # Extract parameters
+  budsParams <- reactive({
+    return(rstan::extract(budsFit()$fit_buds))
+  })
+    
   # Gather tau samples drawn from the posterior
   tau_df <- reactive({
-    req(budsFit())
-    return(get_tau_df(budsFit(), prob = 0.95))
+    return(get_tau_df(budsParams(), prob = 0.95))
   })
   
   # Choose a subset of samples to display trajectory for
@@ -200,45 +213,33 @@ shinyServer(function(input, output) {
     return(low_dim_vis(D0(), method = input$method, dims = 3))
   })
   
-  distatisData <- reactive({
-    req(budsFit())
-    fitParams <- rstan::extract(budsFit())
-    nDraws <- nrow(fitParams$tau)
-    B <- min(B, nDraws) 
-    boot <- get_D_copies(D(), budsFit(), B)
+  distatisData <- eventReactive(budsFit(), {
+    message("Computing input data for DiSTATIS...")
+    shinyjs::html("text", "Computing input data for DiSTATIS...")
+    boot <- get_D_copies(D(), budsFit(), B, min_sigma = min_sigma)
     distatis_input <- get_input_for_distatis(D = D(), 
                                              D.lst = boot$D.lst,
                                              tau_mode =  tau_df()$tau,
                                              tau.lst = boot$booData.lst, 
                                              sample_data = isolate(sampleData()))
-    message("Computing input data for DiSTATIS...")
-    shinyjs::html("text", "Computing input data for DiSTATIS...")
     return(distatis_input) 
   })
   
-  distatis_res <- reactive({
+  distatis_res <- eventReactive(distatisData(), {
+    message("Running DiSTATIS...")
+    shinyjs::html("text", "Running DiSTATIS...")
     res <- run_distatis(bootD = distatisData()$bootD, dims =2,
                         booData.lst = distatisData()$booData.lst, 
                         modeData = distatisData()$modeData)
-    message("Running DiSTATIS...")
-    shinyjs::html("text", "Running DiSTATIS...")
     return(res)
   })
   
   
   ####################### PLOTTING #########################
-  
-  # # Plot average distances to kNN along tau interval
-  # plot_kNN_dist <- reactive({
-  #   req(covariate_name())
-  #   plt <- plot_kNN_mean_dist(D(), tau_df()$tau, color = sample_covariate(),
-  #                             color_label = covariate_name(), 
-  #                             K = input$K, error_bars = FALSE)
-  #   return(plt)
-  # })
-  
+
   # Plot tau estimates vs rankof tau
-  plot_rank_tau <- eventReactive(c(tau_df(), sample_covariate()), {
+  plot_rank_tau <-  eventReactive(c(tau_df(), idxBigger(),
+                                    input$updateButton), {
     plt <- plot_buds_1D(tau_df(), covariate = NULL,
                         color = sample_covariate(), 
                         color_label = covariate_name(), 
@@ -246,8 +247,9 @@ shinyServer(function(input, output) {
     return(plt)
   })
   
-  # Plot tau against chosen covariate
-  plot_data_vs_tau <- eventReactive(c(tau_df(), sample_covariate()), {
+  # Plot tau against chosen covariate 
+  plot_data_vs_tau <- eventReactive(c(tau_df(), idxBigger(),
+                                      input$updateButton), {
     plt <- plot_buds_1D(tau_df(), covariate = sample_covariate(),
                         color = sample_covariate(), 
                         color_label = covariate_name(), 
@@ -256,8 +258,9 @@ shinyServer(function(input, output) {
   })
   
   # Plot 2D visualization of the data and trajectories
-  plot2D <- eventReactive(c(Y2D(), covariate_name()), {
-    plt <- plot_buds_trajectory(budsFit(), Y2D()$Y, Y2D()$eigs,
+  plot2D <-  eventReactive(c(budsParams(),input$nPaths, input$nCenters,
+                             input$updateButton), {
+    plt <- plot_buds_trajectory(budsParams(), Y2D()$Y, Y2D()$eigs,
                                 sample_data = sampleData(), 
                                 covariate_name = covariate_name(), 
                                 path_col = "#2171B5", 
@@ -267,8 +270,9 @@ shinyServer(function(input, output) {
   })
   
   # Plot 3D visualization of the data and trajectory on idxBigger
-  plot3D <- eventReactive(c(Y3D(), covariate_name()), {
-    plt <- plot_buds_trajectory(budsFit(), Y3D()$Y, Y3D()$eigs,
+  plot3D <- eventReactive(c(budsParams(), input$nPaths, input$nCenters,
+                            input$updateButton), {
+    plt <- plot_buds_trajectory(budsParams(), Y3D()$Y, Y3D()$eigs,
                                 sample_data = sampleData(), 
                                 covariate_name = covariate_name(), 
                                 path_col = "#2171B5", 
@@ -277,16 +281,20 @@ shinyServer(function(input, output) {
     return(plt)
   })
   
-  plot_X <- eventReactive(c(input$runButton, input$loadDefault), {
-    req(ncol(X()) == nrow(sampleData()))
-    plt <- plot_ordered_matrix(X(), tau_df()$tau, log_trans = TRUE,
+  plot_X <- reactive({
+    #eventReactive(c(input$runButton, input$loadDefault), {
+    nSamples <- ncol(isolate(X()))
+    req(nSamples == length(tau_df()$tau))
+    plt <- plot_ordered_matrix(isolate(X()), tau_df()$tau, 
+                               log_trans = TRUE,
                                keep_fatures = NULL, 
-                               nfeatures = max(500, 2*ncol(X())),
+                               nfeatures = min(500, 3*nSamples),
                                byMean = TRUE, window = NULL)
     return(plt)
   })
   
-  plot_density <- eventReactive(c(distatis_res(), covariate_name()), {
+  plot_density <- eventReactive(c(distatis_res(),
+                                  input$updateButton), {
     distatis_df <- distatis_res()$partial
     consensus_df <- distatis_res()$consensus
     plt <- plot_distatis(distatis_df, consensus_df, 
@@ -294,7 +302,9 @@ shinyServer(function(input, output) {
     return(plt)
   })
   
-  plot_contours <- eventReactive(c(distatis_res(), covariate_name()), {
+  plot_contours <- eventReactive(c(distatis_res(),
+                                   chosen_samples(),
+                                   input$updateButton), {
     distatis_df <- distatis_res()$partial
     consensus_df <- distatis_res()$consensus
     plt <- plot_point_contours(distatis_df, consensus_df, 
@@ -303,8 +313,8 @@ shinyServer(function(input, output) {
     return(plt)
   })
   
-  plot_features <- eventReactive(c(input$runButton, input$loadDefault), {
-    plt <- plot_features_curves(X(), tau_df()$tau, 
+  plot_features <- reactive({
+    plt <- plot_features_curves(isolate(X()), tau_df()$tau, 
                                 feat_idx = chosen_feats(), 
                                 log_trans = TRUE)
     return(plt)
