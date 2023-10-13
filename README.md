@@ -1,16 +1,7 @@
-# visTrajectory
+![](./src/s634_AgfUfbYjXawy6O3hEE7ZoUnwNj0XwsK6AZI86Dfh_logo_7.jpg)
 
-visTrajectory is a Shiny App for visualizing latent trajectories and their
-uncertainties in multivariate and high-dimensional datasets.
+# visTrajectory: Visualize latent trajectories and their uncertainties
 
-The app can be downloaded from here or accessed as a web-based tool from shinyapp.io servers:
-https://nlhuong.shinyapps.io/visTrajectory/
+#### Use app online: __[www.shinyappstore.com/a/visTrajectory](https://shinyappstore.com/a/visTrajectory)__
 
-See the video in the video_demo directory for details on how to use the app.
-
-visTrajectory is build on a RStan-based-package, buds
-(https://github.com/nlhuong/buds). buds maps high-dimensional data with an
-inherent ordering to latent 1D locations along an underlying gradient or
-trajectory. visTrajectory generates plots forrecovered 1D coordinates and their
-associated uncertainties as well as provides 2 and 3D usualizations of the
-trajectory.
+visTrajectory is a Shiny App for visualizing latent trajectories and their uncertainties in multivariate and high-dimensional datasets. It uses the Bayesian Unidimensional Scaling (BUDS) technique which extracts dominant sources of variation in high dimensional datasets and produces their visual data summaries, facilitating the exploration of a hidden continuum. The method maps multivariate data points to latent one-dimensional coordinates along their underlying trajectory, and provides estimated uncertainty bounds. By statistically modeling dissimilarities and applying a DiSTATIS registration method to their posterior samples, we are able to incorporate visualizations of uncertainties in the estimated data trajectory across different regions using confidence contours for individual data points. Original publication: Nguyen and Holmes. BMC Bioinformatics volume 18, Article number: 394 (2017)
